@@ -1,0 +1,13 @@
+{
+	"vocab_size": 64000,
+	"hidden_size": 1536,
+	"dropout": 0, 
+	"num_attention_heads": 24,
+	"num_hid_dim": 64,
+	"mid_size": 4096,
+	"tie_weight": false,
+	"label_smoothing": 0,
+	"max_length": 1024,
+	"num_layers": 24,
+	"weight_std_range": 0.02
+}
