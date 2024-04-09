@@ -2,7 +2,7 @@ import re
 
 def concat_all(title, summary, sections):
 	if summary is not None:
-		if summary == title:
+		if summary == title or len(summary) < 16:
 			text = ''
 		else:
 			text = title + ':' + summary + '\n\n'
@@ -12,7 +12,11 @@ def concat_all(title, summary, sections):
 		if section['title'] in ['全集在线观看', '截图']:
 			continue
 		content = section['content']
+		content = re.sub('\n\s+', '\n', content)
+		content = re.sub('\s+\n', '\n', content)
 		content = re.sub('\n\s+\n', '\n\n', content)
+		content = re.sub('^\s+', '', content)
+		content = re.sub('\s+$', '', content)
 		content = content.replace('\xa0\xa0' + title, '')
 		if section['title'].endswith('\n') or content.startswith('\n'):
 			text += title + '-' + section['title'] + content

@@ -5,6 +5,11 @@ import math
 import numpy as np
 import random
 from utils import build_chat_input, logits_processor
+is_flash_attn_available = True
+try:
+	from flash_attn import flash_attn_func
+except:
+	is_flash_attn_available = False
 
 class RMSNorm(nn.Module):
 	"""docstring for RMSNorm"""
@@ -65,25 +70,29 @@ class SelfAttn(nn.Module):
 		# bsz, seq_len, num_heads, num_hid_dim --> bsz, num_heads, seq_len, num_hid_dim
 		value_t = _value.view(bsz, -1, self.num_heads, self.num_hid_dim).contiguous().permute(0, 2, 1, 3)
 
-		# bsz, num_heads, seq_len, seq_len
-		score = torch.matmul(query_t, key_t) / math.sqrt(self.num_hid_dim)
-		# bsz, seq_len --> bsz, 1, seq_len, 1
-		if mask is not None:
-			if mask.dim() == 2:
-				mask = mask.unsqueeze(1).unsqueeze(1)
-			elif mask.dim() == 3:
-				mask = mask.unsqueeze(1)
-			mask = (1 - mask) * (-10000)
-			mask = mask.to(score.dtype)
-			# attention
-			attn = F.softmax(score + mask, dim=-1)
+		if is_flash_attn_available:
+			attn_out = flash_attn_func(query_t, key_t.contiguous().transpose(2, 3), value_t, dropout_p=0, causal=True)
 		else:
-			attn = F.softmax(score, dim=-1)
-		attn = self.dropout(attn)
+			# bsz, num_heads, seq_len, seq_len
+			score = torch.matmul(query_t, key_t) / math.sqrt(self.num_hid_dim)
+			# bsz, seq_len --> bsz, 1, seq_len, 1
+			if mask is not None:
+				if mask.dim() == 2:
+					mask = mask.unsqueeze(1).unsqueeze(1)
+				elif mask.dim() == 3:
+					mask = mask.unsqueeze(1)
+				mask = (1 - mask) * (-10000)
+				mask = mask.to(score.dtype)
+				# attention
+				attn = F.softmax(score + mask, dim=-1)
+			else:
+				attn = F.softmax(score, dim=-1)
+			attn = self.dropout(attn)
 
-		attn_out = torch.matmul(attn, value_t)
-		# bsz, seq_len, num_heads, num_hid_dim --> bsz, seq_len, hidden_size
-		attn_out = attn_out.permute(0, 2, 1, 3).contiguous().view(bsz, -1, self.hidden_size)
+			attn_out = torch.matmul(attn, value_t)
+			# bsz, seq_len, num_heads, num_hid_dim --> bsz, seq_len, hidden_size
+			attn_out = attn_out.permute(0, 2, 1, 3).contiguous()
+		attn_out = attn_out.reshape(bsz, seq_len, hidden_size)
 		attn_out = self.out_linear(attn_out)
 		return attn_out, layer_past
 
@@ -132,10 +141,10 @@ class DecoderLayer(nn.Module):
 
 class Embedding(nn.Module):
 	"""docstring for Embedding"""
-	def __init__(self, vocab_size, hidden_size, dropout):
+	def __init__(self, vocab_size, hidden_size, max_len, dropout):
 		super(Embedding, self).__init__()
 		self.token_embeddings = nn.Embedding(vocab_size, hidden_size)
-		self.position_embeddings = nn.Embedding(1024, hidden_size)
+		self.position_embeddings = nn.Embedding(max_len, hidden_size)
 		self.dropout = nn.Dropout(dropout)
 
 	def forward(self, input_ids, position_ids=None):
@@ -151,7 +160,7 @@ class GPT(nn.Module):
 		super(GPT, self).__init__()
 		self.config = config
 		self.generation_config = generation_config
-		self.embeddings = Embedding(config['vocab_size'], config['hidden_size'], config['dropout'])
+		self.embeddings = Embedding(config['vocab_size'], config['hidden_size'], config['max_length'], config['dropout'])
 		self.layers = nn.ModuleList([DecoderLayer(config['num_attention_heads'], config['num_hid_dim'], config['hidden_size'], config['dropout'], config['mid_size']) for _ in range(config['num_layers'])])
 		self.final_norm = RMSNorm(config['hidden_size'])
 		self.classifier = nn.Linear(config['hidden_size'], config['vocab_size'])
@@ -177,7 +186,7 @@ class GPT(nn.Module):
 		else:	
 			shift_labels = input_ids.clone()[:, 1:].contiguous()
 		loss = loss_fun(shift_logits.view(-1, self.config['vocab_size']), shift_labels.view(-1))
-		return loss
+		return loss, logits
 
 	def prepare_inputs_for_generation(self, input_ids, position_ids, past_key_values):
 		model_inputs = {}

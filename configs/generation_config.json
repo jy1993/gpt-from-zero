@@ -1,0 +1,8 @@
+{
+	"use_cache": true,
+	"eos_token_id": 2,
+	"do_sampling": true,
+	"temperature": 0.7,
+	"top_p": 0.7,
+	"repetition_penalty": 1.2
+}

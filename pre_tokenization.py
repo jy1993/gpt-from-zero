@@ -52,11 +52,11 @@ if __name__ == '__main__':
     # print(sum(len(f) for f in features) * config['max_length'] / (10**9))
     # fast_dump(features, args.output_path)
     
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path, trust_remote_code=True)
     if args.task == 'pretrain':
-        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path, trust_remote_code=True)
         train_files = [os.path.join(args.train_dir, f) for f in os.listdir(args.train_dir)]
         valid_files = [os.path.join(args.valid_dir, f) for f in os.listdir(args.valid_dir)]
-        dataset = load_dataset(args.file_type, data_files={'train':train_files[:args.num_files], 'validation': valid_files[:args.num_files]})
+        dataset = load_dataset('json' if args.dataset == 'baidubaike' else 'parquet', data_files={'train':train_files[:args.num_files], 'validation': valid_files[:args.num_files]})
         # dataset = dataset.select(range(1000))
         print(dataset)
         if args.dataset == 'code':
@@ -67,16 +67,26 @@ if __name__ == '__main__':
             preprocess_fn = preprocess_pretrain_wikipedia_dataset
             remove_columns = ['id', 'url', 'title', 'text']
         elif args.dataset == 'baidubaike':
-            dataset = dataset.filter(lambda x: get_length(x) > 100)
+            dataset = dataset.filter(lambda x: get_length(x) > 50)
             preprocess_fn = preprocess_pretrain_baidubaike_dataset
             remove_columns = ['title', 'summary', 'sections', 'tags', 'url']
+        elif args.dataset == 'wanjuan':
+            preprocess_fn = preprocess_pretrain_wanjuan_dataset
+            remove_columns = ['id', 'content']
+        elif args.dataset == 'pile':
+            preprocess_fn = preprocess_pretrain_pile_dataset
+            remove_columns = ['text']
         func = partial(preprocess_fn, tokenizer=tokenizer, max_length=config['max_length'])
         dataset = dataset.map(func, batched=True, remove_columns=remove_columns, num_proc=args.n_jobs)
     elif args.task == 'sft':
-        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path, trust_remote_code=True)
         dataset = load_dataset(args.file_type, data_files={'train': args.train_filename, 'validation': args.valid_filename})
         print(dataset)
         func = partial(preprocess_sft_dataset_alpaca, tokenizer=tokenizer, max_length=config['max_length'], eos_token_id=tokenizer.eos_token_id, pad_token_id=tokenizer.pad_token_id)
         dataset = dataset.map(func, batched=True, remove_columns=['instruction', 'input', 'output', 'history'], num_proc=args.n_jobs)
+    elif args.task == 'dpo':
+        dataset = load_dataset(args.file_type, data_files={'train': args.train_filename, 'validation': args.valid_filename})
+        print(dataset)
+        func = partial(preprocess_dpo_dataset_alpaca, tokenizer=tokenizer, max_length=config['max_length'], eos_token_id=tokenizer.eos_token_id, pad_token_id=tokenizer.pad_token_id)
+        dataset = dataset.map(func, batched=True, remove_columns=['instruction', 'input', 'output'], num_proc=args.n_jobs)
     print(dataset)
     dataset.save_to_disk(args.output_path)

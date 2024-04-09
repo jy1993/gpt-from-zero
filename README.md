@@ -10,10 +10,13 @@ deepspeed --include localhost:0,1 pretrain_ds.py --exp_name gpt_1B --output_dir 
 
 ## phase2: supervised-finetuning
 ### step1: data preparation
-python pre_tokenization.py --task sft --train_filename sft-data/alpaca_chinese_train.json --valid_filename sft-data/alpaca_chinese_train.json --output_path pre-token-data/sft
+python pre_tokenization.py --task sft --train_filename sft-data/alpaca_chinese_train.json --valid_filename sft-data/alpaca_chinese_train.json --output_path cached/sft
 
 ### step2: train the sft model
-deepspeed --include localhost:0 pretrain_ds.py --task sft --exp_name gpt_1B_sft --output_dir gpt_1B_sft --zero_stage 0 --config_path configs/1B.json --gradient_checkpointing --per_device_train_batch_size 24 --model_path gpt_1B/pretrain_steps_30000 --eval_steps 300 --save_steps 300 --epochs 3
+deepspeed --include localhost:0 pretrain_ds.py --task sft --exp_name gpt_1B_sft --output_dir gpt_1B_sft --zero_stage 0 --config_path configs/1B.json --gradient_checkpointing --per_device_train_batch_size 24 --model_path gpt_1B/pretrain_steps_3000 --eval_steps 300 --save_steps 300 --epochs 3 --lr 3e-5
 
-## phase3: DPO
+## phase3: DPO/ORPO
 ### step1: data preparation
+python pre_tokenization.py --task dpo --train_filename dpo-data/alpaca_chinese_train.json --valid_filename dpo-data/alpaca_chinese_train.json --output_path cached/dpo
+
+deepspeed --include localhost:0 pretrain_ds.py --task sft --exp_name gpt_1B_sft --output_dir gpt_1B_sft --zero_stage 0 --config_path configs/1B.json --gradient_checkpointing --per_device_train_batch_size 24 --model_path gpt_1B/pretrain_steps_3000 --eval_steps 300 --save_steps 300 --epochs 3 --lr 3e-5
