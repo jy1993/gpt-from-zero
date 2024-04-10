@@ -51,28 +51,30 @@ class SelfAttn(nn.Module):
 		bsz, seq_len, hidden_size = query.shape
 
 		# linear
-		_query = self.query_linear(query)
-		_key = self.key_linear(key)
-		_value = self.value_linear(value)
+		mixed_query = self.query_linear(query)
+		mixed_key = self.key_linear(key)
+		mixed_value = self.value_linear(value)
 
 		if layer_past is not None:
 			past_keys, past_values = layer_past
-			_key = torch.cat([past_keys, _key], dim=1)
-			_value = torch.cat([past_values, _value], dim=1)
+			mixed_key = torch.cat([past_keys, mixed_key], dim=1)
+			mixed_value = torch.cat([past_values, mixed_value], dim=1)
 		if use_cache:
-			layer_past = (_key, _value)
+			layer_past = (mixed_key, mixed_value)
 
-		# transpose for attn
-		# bsz, seq_len, num_heads, num_hid_dim --> bsz, num_heads, seq_len, num_hid_dim
-		query_t = _query.view(bsz, -1, self.num_heads, self.num_hid_dim).contiguous().permute(0, 2, 1, 3)
-		# bsz, seq_len, num_heads, num_hid_dim --> bsz, num_heads, num_hid_dim, seq_len
-		key_t = _key.view(bsz, -1, self.num_heads, self.num_hid_dim).contiguous().permute(0, 2, 3, 1)
-		# bsz, seq_len, num_heads, num_hid_dim --> bsz, num_heads, seq_len, num_hid_dim
-		value_t = _value.view(bsz, -1, self.num_heads, self.num_hid_dim).contiguous().permute(0, 2, 1, 3)
-
+		query_t = mixed_query.view(bsz, -1, self.num_heads, self.num_hid_dim)
+		key_t = mixed_key.view(bsz, -1, self.num_heads, self.num_hid_dim)
+		value_t = mixed_value.view(bsz, -1, self.num_heads, self.num_hid_dim)
 		if is_flash_attn_available:
-			attn_out = flash_attn_func(query_t, key_t.contiguous().transpose(2, 3), value_t, dropout_p=0, causal=True)
+			attn_out = flash_attn_func(query_t, key_t, value_t, dropout_p=0, causal=True)
 		else:
+			# transpose for attn
+			# bsz, seq_len, num_heads, num_hid_dim --> bsz, num_heads, seq_len, num_hid_dim
+			query_t = query_t.contiguous().permute(0, 2, 1, 3)
+			# bsz, seq_len, num_heads, num_hid_dim --> bsz, num_heads, num_hid_dim, seq_len
+			key_t = key_t.contiguous().permute(0, 2, 3, 1)
+			# bsz, seq_len, num_heads, num_hid_dim --> bsz, num_heads, seq_len, num_hid_dim
+			value_t = value_t.contiguous().permute(0, 2, 1, 3)
 			# bsz, num_heads, seq_len, seq_len
 			score = torch.matmul(query_t, key_t) / math.sqrt(self.num_hid_dim)
 			# bsz, seq_len --> bsz, 1, seq_len, 1
