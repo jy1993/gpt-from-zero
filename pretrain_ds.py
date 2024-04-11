@@ -15,7 +15,7 @@ from torch.utils.tensorboard import SummaryWriter
 from datasets import load_from_disk
 import deepspeed
 from deepspeed.ops.adam import DeepSpeedCPUAdam, FusedAdam
-from datasets import interleave_datasets, load_dataset
+from datasets import interleave_datasets, load_dataset, concatenate_datasets
 from functools import partial
 
 parser = ArgumentParser()
@@ -31,6 +31,7 @@ parser.add_argument('--code_cache_path', type=str, default='cached/code')
 parser.add_argument('--wanjuan_cache_path', type=str, default='cached/wanjuan')
 parser.add_argument('--pile_cache_path', type=str, default='cached/the-pile')
 parser.add_argument('--alpaca_cache_path', type=str, default='cached/sft-alpaca')
+parser.add_argument('--dpo_cache_path', type=str, default='cached/alignment')
 parser.add_argument('--tokenizer_path', type=str, default='yi-tokenizer')
 parser.add_argument('--config_path', type=str, default=None)
 parser.add_argument('--save_steps', type=int, default=10000)
@@ -60,7 +61,7 @@ def train(model, train_loader, valid_loader, optimizer, scheduler, scaler, write
 				_, logits = model(**inputs)
 				labels = torch.cat([batch[2], batch[5]], dim=0)
 				if args.task == 'orpo':
-					loss = get_orpo_loss(logits, labels)
+					loss, metrics = get_orpo_loss(logits[:, :-1], labels[:, 1:])
 				else:
 					raise NotImplementedError("DPO not implemented")
 			else:
@@ -71,14 +72,20 @@ def train(model, train_loader, valid_loader, optimizer, scheduler, scaler, write
 				loss = loss / args.gradient_accumulation_steps
 			if args.global_rank <= 0:
 				writer.add_scalar('Train/total_loss', loss.item(), global_step)
+				if args.task == 'orpo':
+					for k, v in metrics.items():
+						writer.add_scalar('Train/%s' % k, v.item(), global_step)
 			model.backward(loss)
 			model.step()
 			global_step += 1
 
 			if global_step % args.eval_steps == 0:
-				ppl = valid(model, valid_loader)
+				ppl, metrics = valid(model, valid_loader)
 				if args.global_rank <= 0:
 					writer.add_scalar('Val/ppl', ppl, global_step)
+					if args.task == 'orpo':
+						for k, v in metrics.items():
+							writer.add_scalar('Val/%s' % k, v.item(), global_step)
 
 			if global_step % args.save_steps == 0:
 				sd = model.module.state_dict() if hasattr(model, 'module') else model.state_dict()
@@ -86,6 +93,7 @@ def train(model, train_loader, valid_loader, optimizer, scheduler, scaler, write
 
 def valid(model, data_loader):
 	val_loss, batch_num = 0, 0
+	metrics = {}
 	with torch.no_grad():
 		model.eval()
 		for batch in tqdm(data_loader):
@@ -95,7 +103,7 @@ def valid(model, data_loader):
 				_, logits = model(**inputs)
 				labels = torch.cat([batch[2], batch[5]], dim=0)
 				if args.task == 'orpo':
-					loss = get_orpo_loss(logits, labels)
+					loss, metrics = get_orpo_loss(logits, labels)
 				else:
 					raise NotImplementedError("DPO not implemented")
 			else:
@@ -105,7 +113,7 @@ def valid(model, data_loader):
 			val_loss += loss.item()
 			batch_num += 1
 	ppl = math.exp(val_loss / batch_num)
-	return ppl
+	return ppl, metrics
 
 def main():
 	if args.local_rank == -1:
@@ -146,15 +154,17 @@ def main():
 		dataset_code_dict = load_from_disk(args.code_cache_path)
 		dataset_wanjuan_dict = load_from_disk(args.wanjuan_cache_path)
 		dataset_pile_dict = load_from_disk(args.pile_cache_path)
-		train_dataset = interleave_datasets([dataset_zh_dict['train'], dataset_en_dict['train'], dataset_code_dict['train'], dataset_wanjuan_dict['train'], dataset_pile_dict['train']])
-		val_dataset = interleave_datasets([dataset_zh_dict['validation'], dataset_en_dict['validation'], dataset_code_dict['validation'], dataset_wanjuan_dict['validation'], dataset_pile_dict['validation']])
+		train_dataset = concatenate_datasets([dataset_zh_dict['train'], dataset_en_dict['train'], dataset_code_dict['train'], dataset_wanjuan_dict['train'], dataset_pile_dict['train']])
+		val_dataset = concatenate_datasets([dataset_zh_dict['validation'], dataset_en_dict['validation'], dataset_code_dict['validation'], dataset_wanjuan_dict['validation'], dataset_pile_dict['validation']])
 		dataset_dict = {'train': train_dataset, 'validation': val_dataset}
 		print(dataset_dict)
 	elif args.task == 'sft':
 		dataset_dict = load_from_disk(args.alpaca_cache_path)
+	elif args.task  == 'dpo' or args.task == 'orpo':
+		dataset_dict = load_from_disk(args.dpo_cache_path)
 	print('done loading data')
-	if args.global_rank <= 0 and args.task in ['sft', 'dpo', 'orpo']:
-		print_rank_0(dataset_dict['train'], tokenizer)
+	if args.global_rank <= 0:
+		print_rank_0(dataset_dict['train'], tokenizer, args.task)
 	if args.local_rank == -1:
 		train_sampler = torch.utils.data.RandomSampler(dataset_dict['train'])
 		valid_sampler = torch.utils.data.SequentialSampler(dataset_dict['validation'])

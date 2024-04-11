@@ -1,6 +1,7 @@
 import torch
 import json
 # import joblib
+import torch.nn.functional as F
 
 def read_jsonl(filename, num_samples=None):
 	data = []
@@ -127,7 +128,7 @@ def preprocess_dpo_dataset_alpaca(examples, tokenizer, max_length, eos_token_id,
 	all_chosen_labels, all_rejected_labels = [], []
 	all_chosen_attention_masks, all_rejected_attention_masks = [], []
 	# for ti, to in zip(tokenized_instructions['input_ids'], tokenized_outputs['input_ids']):
-	for inst, chosen_ids, rejected_ids in zip(instructions, tokenized_chosen_ids, tokenized_rejected_ids):
+	for inst, chosen_ids, rejected_ids in zip(instructions, tokenized_chosen_ids['input_ids'], tokenized_rejected_ids['input_ids']):
 		pairs, inst_ids = build_chat_input(tokenizer, inst, history=[])
 		input_ids, labels = [], []
 		prompt_chosen_ids = inst_ids + chosen_ids + [eos_token_id]
@@ -142,18 +143,17 @@ def preprocess_dpo_dataset_alpaca(examples, tokenizer, max_length, eos_token_id,
 		else:
 			print('the length of example is %s which exceeds max_length' % len(prompt_chosen_ids))
 			continue
-		all_prompt_chosen_ids.append(prompt_chosen_ids + [pad_token_id] * chosen_padding_length)
-		all_chosen_attention_masks.append(chosen_attention_mask + [0] * chosen_padding_length)
-		all_chosen_labels.append(chosen_labels + [-100]*chosen_padding_length)
-
 		if len(prompt_rejected_ids) < max_length:
 			rejected_padding_length = max_length - len(prompt_rejected_ids)
 		else:
 			print('the length of example is %s which exceeds max_length' % len(prompt_rejected_ids))
 			continue
-		all_prompt_rejected_ids.append(prompt_rejected_ids + [pad_token_id] * prompt_rejected_ids)
-		all_rejected_attention_masks.append(rejected_attention_mask + [0] * prompt_rejected_ids)
-		all_rejected_labels.append(rejected_labels + [-100]*chosen_padding_length)
+		all_prompt_chosen_ids.append(prompt_chosen_ids + [pad_token_id] * chosen_padding_length)
+		all_chosen_attention_masks.append(chosen_attention_mask + [0] * chosen_padding_length)
+		all_chosen_labels.append(chosen_labels + [-100]*chosen_padding_length)
+		all_prompt_rejected_ids.append(prompt_rejected_ids + [pad_token_id] * rejected_padding_length)
+		all_rejected_attention_masks.append(rejected_attention_mask + [0] * rejected_padding_length)
+		all_rejected_labels.append(rejected_labels + [-100]*rejected_padding_length)
 	return {'chosen_ids': all_prompt_chosen_ids, 
 		'chosen_attention_mask': all_chosen_attention_masks, 
 		'chosen_labels': all_chosen_labels,
@@ -176,15 +176,35 @@ def safe_load(model, model_path):
 	model.load_state_dict({k.replace('module.', ''): v for k, v in sd.items()})
 	return model
 
-def print_rank_0(dataset, tokenizer):
+def print_rank_0(dataset, tokenizer, task):
 	item = dataset[0]
-	input_ids = item['input_ids']
-	labels = item['labels']
-	decoded = tokenizer._convert_id_to_token(input_ids)
-	for i, l, d in zip(input_ids, labels, decoded):
-		if d == '<unk>':
-			continue
-		print(i, l, d if d != '\n' else '_n')
+	if task == 'pretrain':
+		pass
+	elif task == 'sft':
+		input_ids = item['input_ids']
+		labels = item['labels']
+		decoded = tokenizer._convert_id_to_token(input_ids)
+		for i, l, d in zip(input_ids, labels, decoded):
+			if d == '<unk>':
+				continue
+			print(i, l, d if d != '\n' else '_n')
+	elif task == 'dpo' or task == 'orpo':
+		input_ids = item['chosen_ids']
+		labels = item['chosen_labels']
+		decoded = tokenizer._convert_id_to_token(input_ids)
+		for i, l, d in zip(input_ids, labels, decoded):
+			if d == '<unk>':
+				continue
+			print(i, l, d if d != '\n' else '_n')
+
+		print()
+		input_ids = item['rejected_ids']
+		labels = item['rejected_labels']
+		decoded = tokenizer._convert_id_to_token(input_ids)
+		for i, l, d in zip(input_ids, labels, decoded):
+			if d == '<unk>':
+				continue
+			print(i, l, d if d != '\n' else '_n')
 
 def prepare_model_inputs(batch, task):
 	if task == 'dpo' or task == 'orpo':
@@ -249,11 +269,12 @@ def get_train_ds_config(offload,
 		"gradient_acculation_steps": grad_acc,
 	}
 
-def get_batch_logps(logits, labels, average=False, label_pad_token_id=-100):
+def get_batch_logps(logits, labels, average=False, label_pad_token_id=-100, eps=1e-5):
+	labels[labels == label_pad_token_id] = 0
 	loss_mask = labels != label_pad_token_id
 	per_token_logps = torch.gather(logits.log_softmax(-1), dim=2, index=labels.unsqueeze(2)).squeeze(2)
 	if average:
-		return (per_token_logps * loss_mask).sum(-1) / loss_mask.sum(-1)
+		return (per_token_logps * loss_mask).sum(-1) / (loss_mask.sum(-1) + eps)
 	else:
 		return (per_token_logps * loss_mask).sum(-1)
 
@@ -266,18 +287,24 @@ def get_dpo_loss(policy_logits, reference_logits, labels, beta=0.1):
 	reference_chosen_logps, reference_rejected_logps = reference_logps.split(bsz, dim=0)
 
 	logits = (policy_chosen_logps - policy_rejected_logps) - (reference_chosen_logps - reference_rejected_logps)
-	loss = - F.log_sigmoid(beta * logits)
+	loss = - F.logsigmoid(beta * logits)
 	return loss
 
-def get_orpo_loss(logits, labels, beta=0.1):
+def get_orpo_loss(logits, labels, beta=0):
 	bsz = logits.shape[0] // 2
 	logps = get_batch_logps(logits, labels, average=True)
-	chosen_logps, rejected_logps = lops.split(bsz, dim=0)
+	chosen_logps, rejected_logps = logps.split(bsz, dim=0)
 	log_odds = chosen_logps - rejected_logps - (torch.log1p(-torch.exp(chosen_logps) - torch.log1p(-torch.exp(rejected_logps))))
-	odds_ratio_loss = - F.log_sigmoid(log_odds)
+	odds_ratio_loss = - F.logsigmoid(log_odds)
 	sft_loss = -chosen_logps
 	loss = (sft_loss + beta * odds_ratio_loss).mean()
-	return loss
+	metrics = {}
+	metrics['chosen_rewards'] = beta * chosen_logps.detach().cpu().mean()
+	metrics['rejected_rewards'] = beta * rejected_logps.detach().cpu().mean()
+	metrics['acc'] = (chosen_logps > rejected_logps).float().detach().cpu().mean()
+	metrics['sft_loss'] = sft_loss.detach().cpu().mean()
+	metrics['orpo_loss'] = beta * odds_ratio_loss.detach().cpu().mean()
+	return loss, metrics
 
 # cli_demo
 def build_chat_input(tokenizer, query, only_query=False, history=[]):
