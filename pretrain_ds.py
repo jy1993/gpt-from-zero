@@ -7,7 +7,7 @@ from torch import nn
 import torch.nn.functional as F
 import math
 from transformers import get_linear_schedule_with_warmup, AdamW, AutoTokenizer
-from modeling_new import GPT
+from modeling_new_rope import GPT
 from tqdm import tqdm
 from utils import *
 from argparse import ArgumentParser
@@ -153,9 +153,9 @@ def main():
 		dataset_en_dict = load_from_disk(args.en_cache_path)
 		dataset_code_dict = load_from_disk(args.code_cache_path)
 		dataset_wanjuan_dict = load_from_disk(args.wanjuan_cache_path)
-		dataset_pile_dict = load_from_disk(args.pile_cache_path)
-		train_dataset = concatenate_datasets([dataset_zh_dict['train'], dataset_en_dict['train'], dataset_code_dict['train'], dataset_wanjuan_dict['train'], dataset_pile_dict['train']])
-		val_dataset = concatenate_datasets([dataset_zh_dict['validation'], dataset_en_dict['validation'], dataset_code_dict['validation'], dataset_wanjuan_dict['validation'], dataset_pile_dict['validation']])
+		# dataset_pile_dict = load_from_disk(args.pile_cache_path)
+		train_dataset = concatenate_datasets([dataset_zh_dict['train'], dataset_en_dict['train'], dataset_wanjuan_dict['train'], dataset_code_dict['train']])
+		val_dataset = concatenate_datasets([dataset_zh_dict['validation'], dataset_en_dict['validation'], dataset_wanjuan_dict['validation'], dataset_code_dict['validation']])
 		dataset_dict = {'train': train_dataset, 'validation': val_dataset}
 		print(dataset_dict)
 	elif args.task == 'sft':

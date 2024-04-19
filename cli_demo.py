@@ -1,11 +1,12 @@
 from transformers import AutoTokenizer
-from modeling_new import GPT
+# from modeling_new import GPT
+from modeling_new_rope import GPT
 from utils import read_json, safe_load
 import torch
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--config_path', type=str, default='configs/2B.json')
+parser.add_argument('--config_path', type=str, default='configs/1B.json')
 parser.add_argument('--generation_config_path', type=str, default='configs/generation_config.json')
 parser.add_argument('--tokenizer_path', type=str, default='yi-tokenizer')
 parser.add_argument('--model_path', type=str, default=None)
@@ -19,6 +20,7 @@ device = 'cuda:0'
 model = GPT(config, generation_config)
 model = safe_load(model, args.model_path)
 model = model.half().to(device)
+model.eval()
 
 while True:
 	query = input('please enter a query, enter quit to stop the program:\n')

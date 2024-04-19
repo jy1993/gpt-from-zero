@@ -7,7 +7,7 @@ from transformers import AutoTokenizer
 import multiprocessing as mp
 from functools import partial
 from datasets import load_dataset
-from baidubaike_preprocess import preprocess_pretrain_baidubaike_dataset, get_length
+from preprocess import *
 
 def get_batches(train_examples, batch_size):
     n = len(train_examples) // batch_size
@@ -30,7 +30,7 @@ parser.add_argument('--num_samples', type=int, default=None)
 parser.add_argument('--train_dir', type=str, default=None)
 parser.add_argument('--valid_dir', type=str, default=None)
 parser.add_argument('--num_files', type=int, default=1)
-parser.add_argument('--config_path', type=str, default='configs/0.9B.json')
+parser.add_argument('--config_path', type=str, default='configs/1B.json')
 parser.add_argument('--tokenizer_path', type=str, default='yi-tokenizer')
 parser.add_argument('--train_filename', type=str, default='')
 parser.add_argument('--valid_filename', type=str, default='')

@@ -30,137 +30,6 @@ def fast_dump(data, filename):
 # 		data = joblib.load(f)
 # 	return data
 
-# pre_tokenization
-def preprocess_pretrain_wanjuan_dataset(examples, tokenizer, max_length):
-	all_input_ids = []
-	examples = [text + tokenizer.eos_token for text in examples['content']]
-	tokenized_examples = tokenizer(examples, add_special_tokens=False)
-	flat_input_ids = []
-	for input_ids in tokenized_examples['input_ids']:
-		flat_input_ids += input_ids
-	num_chunks = len(flat_input_ids) // max_length
-
-	for i in range(num_chunks):
-		all_input_ids.append(flat_input_ids[i*max_length:i*max_length+max_length])
-	return {'input_ids': all_input_ids}
-
-def preprocess_pretrain_pile_dataset(examples, tokenizer, max_length):
-	all_input_ids = []
-	examples = [text + tokenizer.eos_token for text in examples['text']]
-	tokenized_examples = tokenizer(examples, add_special_tokens=False)
-	flat_input_ids = []
-	for input_ids in tokenized_examples['input_ids']:
-		flat_input_ids += input_ids
-	num_chunks = len(flat_input_ids) // max_length
-
-	for i in range(num_chunks):
-		all_input_ids.append(flat_input_ids[i*max_length:i*max_length+max_length])
-	return {'input_ids': all_input_ids}
-
-def preprocess_pretrain_code_dataset(examples, tokenizer, max_length):
-	all_input_ids = []
-	examples = [text + tokenizer.eos_token for text in examples['code']]
-	tokenized_examples = tokenizer(examples, add_special_tokens=False)
-	flat_input_ids = []
-	for input_ids in tokenized_examples['input_ids']:
-		flat_input_ids += input_ids
-	num_chunks = len(flat_input_ids) // max_length
-
-	for i in range(num_chunks):
-		all_input_ids.append(flat_input_ids[i*max_length:i*max_length+max_length])
-	return {'input_ids': all_input_ids}
-
-def preprocess_pretrain_wikipedia_dataset(examples, tokenizer, max_length):
-	all_input_ids = []
-	examples = [title + '\n' + text + tokenizer.eos_token for title, text in zip(examples['title'], examples['text'])]
-	tokenized_examples = tokenizer(examples, add_special_tokens=False)
-	flat_input_ids = []
-	for input_ids in tokenized_examples['input_ids']:
-		flat_input_ids += input_ids
-	num_chunks = len(flat_input_ids) // max_length
-
-	for i in range(num_chunks):
-		all_input_ids.append(flat_input_ids[i*max_length:i*max_length+max_length])
-	return {'input_ids': all_input_ids}
-
-def preprocess_sft_dataset_alpaca(examples, tokenizer, max_length, eos_token_id, pad_token_id):
-	all_input_ids = []
-	instructions = examples['instruction']
-	inputs = examples['input']
-	historys = examples['history']
-	instructions = [inst + '\n' + input_ if input_ != '' else inst for inst, input_ in zip(instructions, inputs)]
-	outputs = examples['output']
-	# tokenized_instructions = tokenizer.tokenizer(instructions, add_special_tokens=False)
-	tokenized_outputs = tokenizer(outputs, add_special_tokens=False)
-	all_input_ids, all_labels, all_attention_masks = [], [], []
-	# for ti, to in zip(tokenized_instructions['input_ids'], tokenized_outputs['input_ids']):
-	for inst, history, res_ids in zip(instructions, historys, tokenized_outputs['input_ids']):
-		pairs, inst_ids = build_chat_input(tokenizer, inst, history=history)
-		input_ids, labels = [], []
-		for source_ids, tgt_ids in pairs:
-			input_ids += source_ids + tgt_ids
-			labels += [-100] * len(source_ids) + tgt_ids
-		input_ids += inst_ids + res_ids + [eos_token_id]
-		labels += [-100] * len(inst_ids) + res_ids + [eos_token_id]
-		attention_mask = [1] * len(input_ids)
-		if len(input_ids) < max_length:
-			padding_length = max_length - len(input_ids)
-		else:
-			print('the length of example is %s which exceeds max_length' % len(input_ids))
-			continue
-		all_input_ids.append(input_ids + [pad_token_id] * padding_length)
-		all_attention_masks.append(attention_mask + [0] * padding_length)
-		all_labels.append(labels + [-100]*padding_length)
-	return {'input_ids': all_input_ids, 'attention_mask': all_attention_masks, 'labels': all_labels}
-
-def preprocess_dpo_dataset_alpaca(examples, tokenizer, max_length, eos_token_id, pad_token_id):
-	all_input_ids = []
-	instructions = examples['instruction']
-	inputs = examples['input']
-	instructions = [inst + '\n' + input_ if input_ != '' else inst for inst, input_ in zip(instructions, inputs)]
-	outputs = examples['output']
-	# tokenized_instructions = tokenizer.tokenizer(instructions, add_special_tokens=False)
-	for output in outputs:
-		assert len(output) == 2
-	tokenized_chosen_ids = tokenizer([output[0] for output in outputs], add_special_tokens=False)
-	tokenized_rejected_ids = tokenizer([output[1] for output in outputs], add_special_tokens=False)
-	all_prompt_chosen_ids, all_prompt_rejected_ids = [], []
-	all_chosen_labels, all_rejected_labels = [], []
-	all_chosen_attention_masks, all_rejected_attention_masks = [], []
-	# for ti, to in zip(tokenized_instructions['input_ids'], tokenized_outputs['input_ids']):
-	for inst, chosen_ids, rejected_ids in zip(instructions, tokenized_chosen_ids['input_ids'], tokenized_rejected_ids['input_ids']):
-		pairs, inst_ids = build_chat_input(tokenizer, inst, history=[])
-		input_ids, labels = [], []
-		prompt_chosen_ids = inst_ids + chosen_ids + [eos_token_id]
-		chosen_labels = [-100] * len(inst_ids) + chosen_ids + [eos_token_id]
-		chosen_attention_mask = [1] * len(prompt_chosen_ids)
-
-		prompt_rejected_ids = inst_ids + rejected_ids + [eos_token_id]
-		rejected_labels = [-100] * len(inst_ids) + rejected_ids + [eos_token_id]
-		rejected_attention_mask = [1] * len(prompt_rejected_ids)
-		if len(prompt_chosen_ids) < max_length:
-			chosen_padding_length = max_length - len(prompt_chosen_ids)
-		else:
-			print('the length of example is %s which exceeds max_length' % len(prompt_chosen_ids))
-			continue
-		if len(prompt_rejected_ids) < max_length:
-			rejected_padding_length = max_length - len(prompt_rejected_ids)
-		else:
-			print('the length of example is %s which exceeds max_length' % len(prompt_rejected_ids))
-			continue
-		all_prompt_chosen_ids.append(prompt_chosen_ids + [pad_token_id] * chosen_padding_length)
-		all_chosen_attention_masks.append(chosen_attention_mask + [0] * chosen_padding_length)
-		all_chosen_labels.append(chosen_labels + [-100]*chosen_padding_length)
-		all_prompt_rejected_ids.append(prompt_rejected_ids + [pad_token_id] * rejected_padding_length)
-		all_rejected_attention_masks.append(rejected_attention_mask + [0] * rejected_padding_length)
-		all_rejected_labels.append(rejected_labels + [-100]*rejected_padding_length)
-	return {'chosen_ids': all_prompt_chosen_ids, 
-		'chosen_attention_mask': all_chosen_attention_masks, 
-		'chosen_labels': all_chosen_labels,
-		'rejected_ids': all_prompt_rejected_ids, 
-		'rejected_attention_mask': all_rejected_attention_masks, 
-		'rejected_labels': all_rejected_labels}
-
 # pretrain_ds
 def collate_for_lm(batch):
 	return torch.LongTensor([x['input_ids'] for x in batch]), 
@@ -290,7 +159,7 @@ def get_dpo_loss(policy_logits, reference_logits, labels, beta=0.1):
 	loss = - F.logsigmoid(beta * logits)
 	return loss
 
-def get_orpo_loss(logits, labels, beta=0):
+def get_orpo_loss(logits, labels, beta=0.1):
 	bsz = logits.shape[0] // 2
 	logps = get_batch_logps(logits, labels, average=True)
 	chosen_logps, rejected_logps = logps.split(bsz, dim=0)
