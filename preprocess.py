@@ -59,19 +59,20 @@ def preprocess_pretrain_baidubaike_dataset(examples, tokenizer, max_length):
 	return {'input_ids': all_input_ids}
 
 def cut_tail(text):
+	index = len(text)
 	if 'References\n\n' in text:
 		index = text.index('References\n\n')
-		return text[:index]
 	elif 'References\n' in text:
-		index = text.index('References\n')
-		return text[:index]
-	elif 'External links\n\n' in text:
-		index = text.index('External links\n\n')
-		return text[:index]
+		index = min(index, text.index('References\n'))
+	if 'External links\n\n' in text:
+		index = min(index, text.index('External links\n\n'))
 	elif 'External links\n' in text:
-		index = text.index('External links\n')
-		return text[:index]
-	return text
+		index = min(index, text.index('External links\n'))
+	if 'Charts\n' in text:
+		index = min(index, text.index('Charts\n'))
+	elif 'Charts\n\n' in text:
+		index = min(index, text.index('Charts\n\n'))
+	return text[:index]
 
 def preprocess_pretrain_wikipedia_dataset(examples, tokenizer, max_length):
 	all_input_ids = []

@@ -175,6 +175,27 @@ def get_orpo_loss(logits, labels, beta=0.1):
 	metrics['orpo_loss'] = beta * odds_ratio_loss.detach().cpu().mean()
 	return loss, metrics
 
+# pretrain_ds_moe
+def load_dense_weight_for_moe(model, model_path, config, add_noise=False):
+	sd = torch.load(model_path, map_location='cpu')
+	layer_numbers = ['layers.%s.' % x for x in range(config['num_layers']) if x % 2 == 1]
+	to_replace_dict = {}
+	for k, v in sd.items():
+		for layer_number in layer_numbers:
+			if layer_number in k and 'fc' in k:
+				to_replace_dict[k] = [k.replace('fc', 'experts.%s' % n) for n in range(config['num_of_experts'])]
+	
+	new_sd = {}
+	for k, v in sd.items():
+		if k in to_replace_dict:
+			for e in to_replace_dict[k]:
+				new_sd[e] = v
+		else:
+			new_sd[k] = v
+	
+	model.load_state_dict(new_sd, strict=False)
+	return model
+
 # cli_demo
 def build_chat_input(tokenizer, query, only_query=False, history=[]):
 	if only_query:

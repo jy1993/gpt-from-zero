@@ -56,7 +56,7 @@ if __name__ == '__main__':
     if args.task == 'pretrain':
         train_files = [os.path.join(args.train_dir, f) for f in os.listdir(args.train_dir)]
         valid_files = [os.path.join(args.valid_dir, f) for f in os.listdir(args.valid_dir)]
-        dataset = load_dataset('json' if args.dataset == 'baidubaike' else 'parquet', data_files={'train':train_files[:args.num_files], 'validation': valid_files[:args.num_files]})
+        dataset = load_dataset('json' if args.dataset in ['baidubaike', 'wanjuan'] else 'parquet', data_files={'train':train_files[:args.num_files], 'validation': valid_files[:args.num_files]})
         # dataset = dataset.select(range(1000))
         print(dataset)
         if args.dataset == 'code':

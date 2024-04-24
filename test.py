@@ -1,7 +1,7 @@
 # coding=utf8
 from transformers import BertTokenizer, AutoTokenizer
 from utils import *
-from modeling_new import GPT
+# from modeling_new import GPT
 import torch
 import os
 
@@ -125,8 +125,10 @@ def test_skip_layer():
 	from modeling_new_skip_layer import GPT
 	config = read_json('gpt-chinese-mini/config.json')
 	config['skip_layer_ratio_list'] = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+	config['avg_keep_layer_ratio'] = 0.7
+	config['max_length'] = 4
 	model = GPT(config)
-	input_ids = torch.LongTensor([0, 1, 2, 3]).unsqueeze(0)
+	input_ids = torch.LongTensor([[0, 1, 2, 3], [0, 100, 200, 3]])
 	loss = model(input_ids)
 	print(loss.item())
 	loss.backward()
@@ -135,8 +137,8 @@ def test_baidubaike():
 	from transformers import BertTokenizer, AutoTokenizer
 	tokenizer = AutoTokenizer.from_pretrained('yi-tokenizer', trust_remote_code=True)
 	from datasets import load_from_disk
-	train = load_from_disk('cached/baidubaike/validation')
-	decoded = tokenizer.decode(train[10]['input_ids'], skip_special_tokens=False)
+	train = load_from_disk('cached/wikipedia-en/validation')
+	decoded = tokenizer.decode(train[100]['input_ids'], skip_special_tokens=False)
 	print(decoded)
 	# from datasets import load_dataset
 	# from baidubaike_preprocess import concat_all
@@ -150,13 +152,53 @@ def test_baidubaike():
 	# 	cnt += 1
 	# print(len(data['title']), len(set(data['title'])))
 
+def test_rope():
+	from modeling_new_rope import GPT
+	config = read_json('configs/0.36B.json')
+	model = GPT(config)
+	input_ids = torch.LongTensor([0, 1, 2, 3]).unsqueeze(0)
+	loss, _ = model(input_ids)
+	print(loss.item())
+	loss.backward()
+
+def test_stream_generate():
+	from modeling_new_rope import GPT
+	from transformers import AutoTokenizer
+	tokenizer = AutoTokenizer.from_pretrained('yi-tokenizer', trust_remote_code=True)
+	config = read_json('configs/0.36B.json')
+	generation_config = read_json('configs/generation_config.json')
+	model = GPT(config, generation_config)
+	start = 0
+	query = 'a test'
+	for response in model.stream_chat(tokenizer, query, device='cpu', only_query=True):
+		print(''.join(response[start:]), end='', flush=True)
+		start = len(response)
+		if start > 100:
+			break
+
+def test_expert():
+	from modeling_new_rope_expert import GPT
+	config = read_json('gpt-chinese-mini/config.json')
+	config['num_of_experts'] = 3
+	config['experts_per_token'] = 1
+	config['max_length'] = 6
+	config['num_layers'] = 2
+	model = GPT(config)
+	input_ids = torch.LongTensor([[0, 1, 2, 3, 4, 5, ], [0, 100, 200, 3, 7, 8]])
+	loss, _ = model(input_ids)
+	print(loss.item())
+	loss.backward()
+
 # test_tokenizer()
 # test_generate()
 # test_stream()
 # test_json('train/zh')
 # test_dataset()
-cal_data_tokens()
+# cal_data_tokens()
 # cal_model_size()
 # test_concat()
 # test_skip_layer()
-# test_baidubaike()
+test_baidubaike()
+# test_rope()
+# test_stream_generate()
+# test_expert()
