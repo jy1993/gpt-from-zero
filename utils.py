@@ -32,7 +32,7 @@ def fast_dump(data, filename):
 
 # pretrain_ds
 def collate_for_lm(batch):
-	return torch.LongTensor([x['input_ids'] for x in batch]), 
+	return torch.LongTensor([x['input_ids'] for x in batch]), torch.LongTensor([x['attention_mask'] for x in batch])
 
 def collate_for_sft(batch):
 	return torch.LongTensor([x['input_ids'] for x in batch]), torch.LongTensor([x['attention_mask'] for x in batch]), torch.LongTensor([x['labels'] for x in batch])
@@ -82,9 +82,8 @@ def prepare_model_inputs(batch, task):
 			'attention_mask': torch.cat([batch[1], batch[4]], dim=0)
 		}
 	else:
-		inputs = {'input_ids': batch[0]}
+		inputs = {'input_ids': batch[0], 'attention_mask': batch[1]}
 		if task == 'sft':
-			inputs['attention_mask'] = batch[1]
 			inputs['labels'] = batch[2]
 	return inputs
 

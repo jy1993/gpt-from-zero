@@ -146,14 +146,6 @@ class DecoderLayer(nn.Module):
 		self.post_attention_norm = RMSNorm(hidden_size)
 
 	def forward(self, hidden_states, attention_mask=None, position_ids=None, layer_past=None, use_cache=False):
-		bsz, seq_len, _ = hidden_states.shape
-		all_ones = hidden_states.new_ones(bsz, seq_len, seq_len)
-		mask = torch.tril(all_ones)
-		if attention_mask is None:
-			attention_mask = mask
-		else:
-			attention_mask = attention_mask.unsqueeze(1) * mask
-
 		residual = hidden_states
 		hidden_states = self.input_norm(hidden_states)
 		hidden_states, layer_past = self.attn(hidden_states, hidden_states, hidden_states, attention_mask, position_ids, layer_past, use_cache)
@@ -198,9 +190,30 @@ class GPT(nn.Module):
 		self.gradient_checkpointing = False
 		self.apply(self.init_weights)
 
+	def extend_attention_mask(self, attention_mask):
+		attention_mask = attention_mask[:, None, :].repeat(
+			1, attention_mask.shape[1], 1
+		)
+		attention_mask = (attention_mask == attention_mask.transpose(1, 2)) * (attention_mask != 0).long()
+		return attention_mask
+
+	def get_attention_mask(self, input_ids, attention_mask=None):
+		bsz, seq_len = input_ids.shape
+		all_ones = input_ids.new_ones(bsz, seq_len, seq_len)
+		mask = torch.tril(all_ones)
+		if attention_mask is None:
+			attention_mask = mask
+		else:
+			if attention_mask.max().item() > 1:
+				attention_mask = self.extend_attention_mask(attention_mask) * mask
+			else:
+				attention_mask = attention_mask.unsqueeze(1) * mask
+		return attention_mask
+
 	def forward(self, input_ids, attention_mask=None, labels=None):
 		position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).to(input_ids.device)
 		hidden_states = self.embeddings(input_ids)
+		attention_mask = self.get_attention_mask(input_ids, attention_mask)
 		for layer in self.layers:
 			if self.gradient_checkpointing and self.training:
 				hidden_states, _ = torch.utils.checkpoint.checkpoint(layer, hidden_states, attention_mask, position_ids)
@@ -243,6 +256,7 @@ class GPT(nn.Module):
 			position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).to(input_ids.device)
 		if attention_mask is None:
 			attention_mask = torch.ones(input_ids.shape[1]).unsqueeze(0).to(input_ids.device)
+			attention_mask = self.get_attention_mask(input_ids, attention_mask)
 		not_finished = input_ids.new_ones(input_ids.shape[0])
 		while True:
 			model_inputs = self.prepare_inputs_for_generation(input_ids, position_ids, past_key_values)
@@ -293,6 +307,7 @@ class GPT(nn.Module):
 			position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).to(input_ids.device)
 		if attention_mask is None:
 			attention_mask = torch.ones(input_ids.shape[1]).unsqueeze(0).to(input_ids.device)
+			attention_mask = self.get_attention_mask(input_ids, attention_mask)
 		not_finished = input_ids.new_ones(input_ids.shape[0])
 		while True:
 			model_inputs = self.prepare_inputs_for_generation(input_ids, position_ids, past_key_values)

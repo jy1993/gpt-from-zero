@@ -1,5 +1,17 @@
 import re
 
+def get_attention_mask_from_input_ids(batch_input_ids, eos_token_id):
+	batch_attention_mask = []
+	for input_ids in batch_input_ids:
+		attention_mask = []
+		cur = 1
+		for i in input_ids:
+			attention_mask.append(cur)
+			if i == eos_token_id:
+				cur += 1
+		batch_attention_mask.append(attention_mask)
+	return batch_attention_mask
+
 def clean_text(text):
 	text = re.sub('\n\s+', '\n', text)
 	text = re.sub('\s+\n', '\n', text)
@@ -14,7 +26,7 @@ def concat_all(title, summary, sections):
 		if summary == title or len(summary) < 16:
 			text = ''
 		else:
-			text = title + ':' + summary + '<|endoftext|>'
+			text = title + '的简介:' + summary + '\n'
 	else:
 		text = ''
 	for idx, section in enumerate(sections):
@@ -27,14 +39,10 @@ def concat_all(title, summary, sections):
 			text += title + '-' + section['title'] + content
 		else:
 			text += title + '-' + section['title'] + '\n' + content
-		text += '<|endoftext|>'
+	text += '<|endoftext|>'
 	text = text.replace('。。<|endoftext|>', '。<|endoftext|>').replace('\n\n<|endoftext|>', '<|endoftext|>').replace('\n<|endoftext|>', '<|endoftext|>').replace('<|endoftext|><|endoftext|>', '<|endoftext|>')
 	text = text.replace('\xa0', ' ').replace('\u3000', ' ')
 	text = text.replace('\x05', '').replace('�', '').replace('\x10', '').replace('\x08', '').replace('\x18', '')
-	# table
-	if text.endswith('<|endoftext|>'):
-		text = text[:-13]
-	# todo no dup
 	return text
 
 def get_length(x):
@@ -56,7 +64,7 @@ def preprocess_pretrain_baidubaike_dataset(examples, tokenizer, max_length):
 
 	for i in range(num_chunks):
 		all_input_ids.append(flat_input_ids[i*max_length:i*max_length+max_length])
-	return {'input_ids': all_input_ids}
+	return {'input_ids': all_input_ids, 'attention_mask': get_attention_mask_from_input_ids(all_input_ids, tokenizer.eos_token_id)}
 
 def cut_tail(text):
 	index = len(text)
@@ -85,7 +93,7 @@ def preprocess_pretrain_wikipedia_dataset(examples, tokenizer, max_length):
 
 	for i in range(num_chunks):
 		all_input_ids.append(flat_input_ids[i*max_length:i*max_length+max_length])
-	return {'input_ids': all_input_ids}
+	return {'input_ids': all_input_ids, 'attention_mask': get_attention_mask_from_input_ids(all_input_ids, tokenizer.eos_token_id)}
 
 def preprocess_pretrain_wanjuan_dataset(examples, tokenizer, max_length):
 	all_input_ids = []
@@ -98,7 +106,7 @@ def preprocess_pretrain_wanjuan_dataset(examples, tokenizer, max_length):
 
 	for i in range(num_chunks):
 		all_input_ids.append(flat_input_ids[i*max_length:i*max_length+max_length])
-	return {'input_ids': all_input_ids}
+	return {'input_ids': all_input_ids, 'attention_mask': get_attention_mask_from_input_ids(all_input_ids, tokenizer.eos_token_id)}
 
 def preprocess_pretrain_pile_dataset(examples, tokenizer, max_length):
 	all_input_ids = []
@@ -111,7 +119,7 @@ def preprocess_pretrain_pile_dataset(examples, tokenizer, max_length):
 
 	for i in range(num_chunks):
 		all_input_ids.append(flat_input_ids[i*max_length:i*max_length+max_length])
-	return {'input_ids': all_input_ids}
+	return {'input_ids': all_input_ids, 'attention_mask': get_attention_mask_from_input_ids(all_input_ids, tokenizer.eos_token_id)}
 
 def preprocess_pretrain_code_dataset(examples, tokenizer, max_length):
 	all_input_ids = []
@@ -124,7 +132,7 @@ def preprocess_pretrain_code_dataset(examples, tokenizer, max_length):
 
 	for i in range(num_chunks):
 		all_input_ids.append(flat_input_ids[i*max_length:i*max_length+max_length])
-	return {'input_ids': all_input_ids}
+	return {'input_ids': all_input_ids, 'attention_mask': get_attention_mask_from_input_ids(all_input_ids, tokenizer.eos_token_id)}
 
 def preprocess_sft_dataset_alpaca(examples, tokenizer, max_length, eos_token_id, pad_token_id):
 	all_input_ids = []

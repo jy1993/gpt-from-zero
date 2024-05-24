@@ -214,19 +214,23 @@ class ExpertDecoderLayer(nn.Module):
 		# print(top_tokens_probs[0])
 		# print(hidden_states[0])
 		all_zeros = hidden_states.new_zeros(hidden_states.shape[0], hidden_states.shape[1], hidden_states.shape[2])
+		all_zeros_count = hidden_states.new_zeros(hidden_states.shape[0], hidden_states.shape[1])
 		for idx, expert in enumerate(self.experts):
 			# bsz, expert_capacity, hidden_size
 			expert_indices = top_tokens_indices[:, :, idx].unsqueeze(-1).repeat(1, 1, hidden_states.shape[-1])
 			expert_in = torch.gather(hidden_states, 1, expert_indices)
 			expert_out = top_tokens_probs[:, :, idx].unsqueeze(-1) * expert(expert_in)
 			all_zeros = all_zeros.scatter_add(1, expert_indices, expert_out)
+			all_zeros_count = all_zeros_count.scatter_add(1, top_tokens_indices[:, :, idx], top_tokens_probs[:, :, idx])
 		# 	print('*' * 10)
 		# 	print(idx)
 		# 	print(expert_indices[0])
 		# 	print(expert_in[0])
 		# 	print(expert_out[0])
 		# print(all_zeros[0])
-		hidden_states = torch.where(all_zeros != 0, all_zeros, hidden_states)
+		# print(all_zeros_count[0])
+		after_expert = all_zeros / (all_zeros_count.unsqueeze(-1) + 1e-6)
+		hidden_states = torch.where(after_expert != 0, all_zeros, hidden_states)
 		# print(hidden_states[0])
 		return hidden_states
 

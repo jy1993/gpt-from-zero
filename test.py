@@ -177,7 +177,7 @@ def test_stream_generate():
 			break
 
 def test_expert():
-	from modeling_new_rope_expert import GPT
+	from modeling_new_rope_moe import GPT
 	config = read_json('gpt-chinese-mini/config.json')
 	config['num_of_experts'] = 3
 	config['experts_per_token'] = 1
@@ -189,6 +189,12 @@ def test_expert():
 	print(loss.item())
 	loss.backward()
 
+def test_attention_mask():
+	from preprocess import get_attention_mask_from_input_ids
+	all_input_ids = [[1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 6]]
+	all_attention_mask = get_attention_mask_from_input_ids(all_input_ids, 0)
+	print(all_attention_mask)
+
 # test_tokenizer()
 # test_generate()
 # test_stream()
@@ -198,7 +204,8 @@ def test_expert():
 # cal_model_size()
 # test_concat()
 # test_skip_layer()
-test_baidubaike()
+# test_baidubaike()
 # test_rope()
 # test_stream_generate()
 # test_expert()
+test_attention_mask()

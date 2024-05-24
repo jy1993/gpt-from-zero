@@ -143,14 +143,16 @@ class DecoderLayer(nn.Module):
 
 class Embedding(nn.Module):
 	"""docstring for Embedding"""
-	def __init__(self, vocab_size, hidden_size, max_len, dropout):
+	def __init__(self, vocab_size, hidden_size, max_len, dropout, alpha=0.1):
 		super(Embedding, self).__init__()
 		self.token_embeddings = nn.Embedding(vocab_size, hidden_size)
 		self.position_embeddings = nn.Embedding(max_len, hidden_size)
 		self.dropout = nn.Dropout(dropout)
+		self.alpha = alpha
 
 	def forward(self, input_ids, position_ids=None):
 		token_embed = self.token_embeddings(input_ids)
+		token_embed = self.alpha * token_embed + (1 - self.alpha) * token_embed.detach()
 		if position_ids is None:
 			position_ids = torch.arange(input_ids.shape[1]).unsqueeze(0).to(input_ids.device)
 		pos_embed = self.position_embeddings(position_ids)

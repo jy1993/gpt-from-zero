@@ -29,6 +29,7 @@ parser.add_argument('--zh_cache_path', type=str, default='cached/baidubaike')
 parser.add_argument('--en_cache_path', type=str, default='cached/wikipedia-en')
 parser.add_argument('--code_cache_path', type=str, default='cached/code')
 parser.add_argument('--wanjuan_cache_path', type=str, default='cached/wanjuan')
+parser.add_argument('--wanjuan_en_cache_path', type=str, default='cached/wanjuan-en')
 parser.add_argument('--pile_cache_path', type=str, default='cached/the-pile')
 parser.add_argument('--alpaca_cache_path', type=str, default='cached/sft-alpaca')
 parser.add_argument('--dpo_cache_path', type=str, default='cached/alignment')
@@ -151,11 +152,12 @@ def main():
 	if args.task == 'pretrain':
 		dataset_zh_dict = load_from_disk(args.zh_cache_path)
 		dataset_en_dict = load_from_disk(args.en_cache_path)
-		dataset_code_dict = load_from_disk(args.code_cache_path)
+		# dataset_code_dict = load_from_disk(args.code_cache_path)
 		dataset_wanjuan_dict = load_from_disk(args.wanjuan_cache_path)
+		dataset_wanjuan_en_dict = load_from_disk(args.wanjuan_en_cache_path)
 		# dataset_pile_dict = load_from_disk(args.pile_cache_path)
-		train_dataset = concatenate_datasets([dataset_zh_dict['train'], dataset_en_dict['train'], dataset_wanjuan_dict['train'], dataset_code_dict['train']])
-		val_dataset = concatenate_datasets([dataset_zh_dict['validation'], dataset_en_dict['validation'], dataset_wanjuan_dict['validation'], dataset_code_dict['validation']])
+		train_dataset = concatenate_datasets([dataset_zh_dict['train'], dataset_en_dict['train'], dataset_wanjuan_dict['train'], dataset_wanjuan_en_dict['train']])
+		val_dataset = concatenate_datasets([dataset_zh_dict['validation'], dataset_en_dict['validation'], dataset_wanjuan_dict['validation'], dataset_wanjuan_en_dict['validation']])
 		dataset_dict = {'train': train_dataset, 'validation': val_dataset}
 		print(dataset_dict)
 	elif args.task == 'sft':

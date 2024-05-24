@@ -1,6 +1,5 @@
 from transformers import AutoTokenizer
 # from modeling_new import GPT
-from modeling_new_rope import GPT
 from utils import read_json, safe_load
 import torch
 import argparse
@@ -11,7 +10,13 @@ parser.add_argument('--generation_config_path', type=str, default='configs/gener
 parser.add_argument('--tokenizer_path', type=str, default='yi-tokenizer')
 parser.add_argument('--model_path', type=str, default=None)
 parser.add_argument('--cut_off', type=int, default=300)
+parser.add_argument('--is_moe_model', action='store_true')
 args = parser.parse_args()
+
+if args.is_moe_model:
+	from modeling_new_rope_moe import GPT
+else:
+	from modeling_new_rope import GPT
 
 tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path, trust_remote_code=True)
 config = read_json(args.config_path)

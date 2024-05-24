@@ -1,3 +1,4 @@
 run.sh
 pretrain.py
 modeling_new.py
+gpt_1B_egs_rope
